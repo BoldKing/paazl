@@ -61,6 +61,7 @@ class PaazlClient
         return $hash;
     }
 
+    /************************************ CHAPTER 4 *************************************/
     public function addressRequest($orderReference, $zipcode, $number, $addition = null, $targetWebshop = null)
     {
         $env = '
@@ -84,6 +85,7 @@ class PaazlClient
 
 
     
+    /************************************ CHAPTER 5 *************************************/
     public function createOrder($orderReference, $products, $targetWebshop = null)
     {
         $productElements = array(
@@ -311,6 +313,7 @@ class PaazlClient
     }
     
 
+    /************************************ CHAPTER 6 *************************************/
     public function orderStatus($orderReference, $targetWebshop = null, $includeLabels = null)
     {
         $env = '
@@ -573,71 +576,174 @@ class PaazlClient
     }
 
 
-        
-    // OUD
-    public function fastCommit($order)
+    /************************************ CHAPTER 7 *************************************/
+    public function generatePdfLabels($orders, $printer, $batch = null)
     {
-        $paazlClient = new PaazlClient();
-        $insert = $paazlClient->createOrder($order);
-        
-        $shippingoptions = $paazlClient->shippingOption($order);
-        
-        if ($this->hasMultipleOptions($shippingoptions)) {
-            return;
-        }
-        $firstOption = $paazlClient->firstOption($shippingoptions);
-        $commit = $paazlClient->commitOrder($order, $firstOption);
-    }
-    
-    public function firstOption($shippingoptions)
-    {
-        if (strlen($shippingoptions['response']['error']['message']) > 0) {
-            return false;
-        } elseif (count($shippingoptions['response']['shippingOptions']['shippingOption']) > 6) {
-            return $shippingoptions['response']['shippingOptions']['shippingOption'];
-        } else {
-            return array_shift($shippingoptions['response']['shippingOptions']['shippingOption']);
-        }
-    }
-    
-    public function hasMultipleOptions($shippingoptions)
-    {
-        $count = count($shippingoptions['response']['shippingOptions']['shippingOption']);
-        if ($count == 1 || $count > 6) {
-            return false;
-        } else {
-            return true;
-        }
-    }
-            
-    
-    
-    /**
-    * Download adress labels
-    */
-    public function getLabels($order) {
-        $orderReference = $order->c['id'];
         $env = '
             <generatePdfLabelsRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
                 <webshop>'.$this->webshopid.'</webshop>
-                <printer>laser</printer>
-                <order>
-                    <orderReference>'.$orderReference.'</orderReference>
-                    <hash>'.$this->generateHash($orderReference).'</hash> 
-                </order>
-            </generatePdfLabelsRequest>
+                <printer>'.$printer.'</printer>
         ';
+        foreach ($orders as $order) {
+            $env .= '
+                    <order>
+                        <orderReference>'.$order['orderReference'].'</orderReference>
+                        <hash>'.$this->generateHash($order['orderReference']).'</hash> 
+            ';
+            if ($order['targetWebshop']) {
+                $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+            }
+            $env .= '</order>';
+        }
+
+        if ($batch) {
+            $env .= '<batch>'.$batch.'</batch>';
+        }
+        $env .= '</generatePdfLabelsRequest>';
         
-        $response = $this->doCall($env);
+        return $this->doCall($env);
+    }
+
+    public function generateExtraPdfLabelRequest($orderReference, $printer, $targetWebshop = null)
+    {
+        $env = '
+            <generateExtraPdfLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                '.$this->mandatoryOrderRefTags($orderReference).'
+                <printer>'.$printer.'</printer>
+        ';
+
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        $env .= '</generateExtraPdfLabelRequest>';
         
-        header("Content-type: application/pdf");
-        header("Content-Disposition: attachment; filename=\"Paazl_labels_order_".$orderReference.".pdf\"");
-        
-        Log::add("Generate labels ".serialize($response), "paazl");
-        
-        exit(base64_decode($response['response']['labels'])); 
+        return $this->doCall($env);
     }
     
+
+    public function generateImageLabels($orders)
+    {
+        $env = '
+            <generateImageLabelsRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                <webshop>'.$this->webshopid.'</webshop>
+        ';
+        foreach ($orders as $order) {
+            $env .= '
+                    <order>
+                        <orderReference>'.$order['orderReference'].'</orderReference>
+                        <hash>'.$this->generateHash($order['orderReference']).'</hash> 
+            ';
+            if ($order['targetWebshop']) {
+                $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+            }
+            $env .= '</order>';
+        }
+        $env .= '</generateImageLabelsRequest>';
+        return $this->doCall($env);
+    }
+
+    public function generateExtraImageLabel($orderReference, $targetWebshop = null)
+    {
+        $env = '
+            <generateExtraImageLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                '.$this->mandatoryOrderRefTags($orderReference).'
+        ';
+
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        $env .= '</generateExtraImageLabelRequest>';
+        return $this->doCall($env);
+    }
+
+    /************************************ CHAPTER 8 *************************************/
+    public function generatePdfReturnLabels($orders, $printer) // BETA, not confirmed that it works
+    {
+        $env = '
+            <generatePdfReturnLabelsRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                <webshop>'.$this->webshopid.'</webshop>
+                <printer>'.$printer.'</printer>
+        ';
+        foreach ($orders as $order) {
+            $env .= '
+                    <order>
+                        <orderReference>'.$order['orderReference'].'</orderReference>
+                        <hash>'.$this->generateHash($order['orderReference']).'</hash> 
+            ';
+            if ($order['targetWebshop']) {
+                $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+            }
+            if ($order['shippingOption']) {
+                $env .= '<shippingOption>'.$order['shippingOption'].'</shippingOption>';
+            }
+            $env .= '</order>';
+        }
+
+        $env .= '</generatePdfReturnLabelsRequest>';
+        return $this->doCall($env);
+    }
+
+    public function generateExtraPdfReturnLabel($orderReference, $printer = null, $targetWebshop = null, $shippingOption = null) // BETA, not confirmed that it works
+    {
+        $env = '
+            <generateExtraPdfReturnLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                '.$this->mandatoryOrderRefTags($orderReference).'
+        ';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+        }
+        if ($shippingOption) {
+            $env .= '<shippingOption>'.$shippingOption.'</shippingOption>';
+        }
+
+        $env .= '</generateExtraPdfReturnLabelRequest>';
+        return $this->doCall($env);
+    }
+
+
+    public function generateImageReturnLabels($orders) // BETA, not confirmed that it works
+    {
+        $env = '
+            <generateImageReturnLabelsRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                <webshop>'.$this->webshopid.'</webshop>
+        ';
+        foreach ($orders as $order) {
+            $env .= '
+                    <order>
+                        <orderReference>'.$order['orderReference'].'</orderReference>
+                        <hash>'.$this->generateHash($order['orderReference']).'</hash> 
+            ';
+            if ($order['targetWebshop']) {
+                $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+            }
+            if ($order['shippingOption']) {
+                $env .= '<shippingOption>'.$order['shippingOption'].'</shippingOption>';
+            }
+            $env .= '</order>';
+        }
+        $env .= '</generateImageReturnLabelsRequest>';
+        return $this->doCall($env);
+    }
+    
+    public function generateExtraImageReturnLabel($orderReference, $targetWebshop = null, $shippingOption = null) // BETA, not confirmed that it works
+    {
+        $env = '
+            <generateExtraImageReturnLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                '.$this->mandatoryOrderRefTags($orderReference).'
+        ';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
+        }
+        if ($shippingOption) {
+            $env .= '<shippingOption>'.$shippingOption.'</shippingOption>';
+        }
+
+        $env .= '</generateExtraImageReturnLabelRequest>';
+        return $this->doCall($env);
+    }
+    
+
+    // CHAPTER 9 TILL 15 COMING SOON....
 
     /**
     *  doCall

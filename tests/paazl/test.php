@@ -2,11 +2,12 @@
 $baseDir = __DIR__."/../..";
 require_once $baseDir.'/vendor/autoload.php';
 
-$paazl = new Atabix\Paazl\PaazlClient(false, "atabix", "solutions1055", "372", "gvv14907");
+$paazl = new Atabix\Paazl\PaazlClient(false, "dsad", "adsasd", "asd", "asdas");
 
-$timezone = 'Europe/Amsterdam';
-date_default_timezone_set($timezone);
-var_dump($paazl->listOrders(date("2013-m-d H:i:s"), $timezone));
-
+$orders = array();
+$orders[] = array('orderReference'=>'test');
+/* $orders[] = array('orderReference'=>'test2', 'shippingOption'=>'UPS_STANDARD_PICKUP'); */
+//var_dump($paazl->generateImageReturnLabels($orders));
+var_dump($paazl->generateExtraImageReturnLabel('test'));
 
 
