@@ -15,16 +15,6 @@ class PaazlClient
     private $password;
     private $webshopid;
     private $integrationpassword;
-    private $distributor = "DPD";
-    
-    public static $status = array(
-        "LABELS_NOT_CREATED" => "label not yet created",
-        "LABELS_CREATED" => "label created, ready for shipment",
-        "SCANNED" =>  "label scanned in sorting centre of distributor",
-        "DELIVERED" =>  "delivered at address of receptor",
-        "DELIVEREDBB" => "delivered at neighboring address of receptor",
-        "PICKEDUP" => "picked up at drop off location, e.g. DHL Servicepoint"
-    );
 
     /**
      * @param string $username username given by Paazl
@@ -32,14 +22,13 @@ class PaazlClient
      * @param string $webshopid webshopid given by Paazl
      * @param string $integrationpassword integrationpassword given by Paazl
      */
-    public function __construct($islive, $username, $password, $webshopid, $integrationpassword, $distributor)
+    public function __construct($islive, $username, $password, $webshopid, $integrationpassword)
     {
         $this->islive = $islive;
         $this->username = $username;
         $this->password = $password;
         $this->webshopid = $webshopid;
         $this->integrationpassword = $integrationpassword;
-        $this->distributor = $distributor;
     }
     
     public function generateHash($orderReference)
@@ -193,89 +182,205 @@ class PaazlClient
         return $this->doCall($env);
     }
     
-    public function commitOrder($orderReference, $shipping)
-    {
-        $env = '<commitOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-            '.$this->mandatoryTags($orderReference).' 
-            <pendingOrderReference>'.$orderReference.'</pendingOrderReference> 
-            <totalAmount>'.$order->c['subtotal'].'</totalAmount> 
-            <customerEmail>'.$mail.'</customerEmail> 
-            <shippingAddress>
-            <companyName>'.e($order->c['d_company']).'</companyName>
-            <street>'.e($order->c['d_street']).'</street> 
-            <housenumber>'.e($order->c['d_number']).e($order->c['d_number_add']).'</housenumber> 
-            <zipcode>'.e($order->c['d_postalcode']).'</zipcode> 
-            <city>'.e($order->c['d_city']).'</city>
-            <country>'.e($order->c['d_country']).'</country>
-            <customerName>'.trim(trim(e($order->c['d_fname'])." ".e($order->c['d_mname']))." ".e($order->c['d_lname'])).'</customerName>
-            </shippingAddress> 
-            <shippingMethod>
-            <type>delivery</type> 
-            <distributor>'.e($shipping['distributor']).'</distributor> 
-            <identifier>'.e($shipping['deliverySchemeLineId']).'</identifier> 
-            <option>'.e($shipping['type']).'</option>
-            <price>0</price> 
-            <maxLabels>1</maxLabels>
-            </shippingMethod>
-            </commitOrderRequest>
+    public function commitOrder(
+        $orderReference,
+        $pendingOrderReference,
+        $totalAmount,
+        $shippingMethod,
+        $shippingAddress,
+        $totalAmountCurrency = "EUR",
+        $shipperAddress = null,
+        $returnAddress = null,
+        $customerEmail = null,
+        $customerPhoneNumber = null,
+        $targetWebshop = null
+    ) {
+        // SET OPTIONAL ELEMNTS
+        // shippingMethod
+        $optElemShippingMethod = array(
+            "distributor", // is not in documentation as an element but it is in the example....
+            "servicepointNotificationEmail",
+            "servicepointNotificationMobile",
+            "customsValue",
+            "customsValueCurrency",
+            "assuredAmount",
+            "assuredAmountCurrency",
+            "collo",
+            "packageCount",
+            "maxLabels",
+            "packagingType",
+            "preferredDeliveryDate",
+            "description"
+        );
+        // shippinAddress
+        $optElemShippingAddress = array(
+            "accountNumber",
+            "companyName",
+            "nameOther",
+            "additionalAddressLine",
+            "addition",
+            "province",
+            "country",
+            "localAddressValidation",
+            "additionalInstruction"
+        );
+
+        // shipper and return Address Elements
+        $optShipperAndReturnAddress = array(
+            "addresseeLine",
+            "street",
+            "housenumber",
+            "addition",
+            "zipcode",
+            "city",
+            "country"
+        );
+
+
+
+        // BUILD XML FILE
+        $env = '
+            <commitOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+                <hash>'.$this->generateHash($pendingOrderReference).'</hash>
+                <webshop>'.$this->webshopid.'</webshop>
+                <orderReference>'.$orderReference.'</orderReference> 
+                <pendingOrderReference>'.$pendingOrderReference.'</pendingOrderReference> 
+                <totalAmount>'.$totalAmount.'</totalAmount> 
+                <totalAmountCurrency>'.$totalAmountCurrency.'</totalAmountCurrency> 
         ';
+        if ($customerEmail) {
+            $env .= '<customerEmail>'.$customerEmail.'</customerEmail>';
+        }
+        if ($customerPhoneNumber) {
+            $env .= '<customerPhoneNumber>'.$customerPhoneNumber.'</customerPhoneNumber>';
+        }
+
+        // shippingMethod
+        $env .= '
+            <shippingMethod>
+                <type>'.$shippingMethod['type'].'</type> 
+                <identifier>'.$shippingMethod['identifier'].'</identifier> 
+                <option>'.$shippingMethod['option'].'</option>
+                <price>'.$shippingMethod['price'].'</price> 
+        ';
+        // insert optional elements
+        foreach ($shippingMethod as $element => $value) {
+            if (in_array($element, $optElemShippingMethod)) {
+                $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+            }
+        }
+        $env .= '</shippingMethod>';
+
+        // shippingAddress
+        $env .= '
+            <shippingAddress>
+                <customerName>'.$shippingAddress['customerName'].'</customerName> 
+                <street>'.$shippingAddress['street'].'</street> 
+                <housenumber>'.$shippingAddress['housenumber'].'</housenumber>
+                <zipcode>'.$shippingAddress['zipcode'].'</zipcode> 
+                <city>'.$shippingAddress['city'].'</city> 
+        ';
+        // insert optional elements
+        foreach ($shippingAddress as $element => $value) {
+            if (in_array($element, $optElemShippingAddress)) {
+                $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+            }
+        }
+        $env .= '</shippingAddress>';
+
+        // (Optional) shipperAddress
+        if (is_array($shipperAddress)) {
+            $env .= '<shipperAddress>';
+            foreach ($shipperAddress as $element => $value) {
+                if (in_array($element, $optShipperAndReturnAddress)) {
+                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+                }
+            }
+            $env .= '</shipperAddress>';
+        }
+
+        // (Optional) returnAddress
+        if (is_array($returnAddress)) {
+            $env .= '<returnAddress>';
+            foreach ($returnAddress as $element => $value) {
+                if (in_array($element, $optShipperAndReturnAddress)) {
+                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+                }
+            }
+            $env .= '</returnAddress>';
+        }
+
+        $env .= '</commitOrderRequest>';
         
         return $this->doCall($env);
     }
 
 
-        public function orderStatus($order)
-        {
-            $orderReference = $order->c['id'];	
-            $env = '
+    public function orderStatus($orderReference, $includeLabels = null)
+    {
+        $env = '
             <orderStatusRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-            '.$this->mandatoryTags($orderReference).'
-            <includeLabels>true</includeLabels>
-            </orderStatusRequest>';
-            
-            return $this->doCall($env);
-        }
+            '.$this->mandatoryTags($orderReference)
+        ;
         
+        if ($includeLabels) {
+            $env .= '<includeLabels>'.$includeLabels.'</includeLabels>';
+        }
+        $env .= '</orderStatusRequest>';
+        
+        return $this->doCall($env);
+    }
+        
+    public function orderDetails($orderReference, $targetWebshop = null)
+    {
+        $env = '
+            <orderDetailsRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            '.$this->mandatoryTags($orderReference)
+        ;
+        
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        $env .= '</orderDetailsRequest>';
+        
+        return $this->doCall($env);
+    }
+        
+    // OUD
+    public function fastCommit($order)
+    {
+        $paazlClient = new PaazlClient();
+        $insert = $paazlClient->createOrder($order);
+        
+        $shippingoptions = $paazlClient->shippingOption($order);
+        
+        if ($this->hasMultipleOptions($shippingoptions)) {
+            return;
+        }
+        $firstOption = $paazlClient->firstOption($shippingoptions);
+        $commit = $paazlClient->commitOrder($order, $firstOption);
+    }
     
-            public function fastCommit($order)
-            {
-                Log::add("Fast commit order #".$order->c['id'], "paazl");
-                $paazlClient = new PaazlClient();
-                $insert = $paazlClient->createOrder($order);
-                
-                $shippingoptions = $paazlClient->shippingOption($order);
-                
-                if ($this->hasMultipleOptions($shippingoptions)) {
-                    Log::add("Multiple shipping options, no auto selection", "paazl");
-                    return;
-                }
-                $firstOption = $paazlClient->firstOption($shippingoptions);
-                Log::add("First shipping option selected for order #".$order->c['id']." (".serialize($firstOption).")", "paazl");
-                $commit = $paazlClient->commitOrder($order, $firstOption);
-                Log::add("Commit order #".$order->c['id'], "paazl");
-            }
-            
-            public function firstOption($shippingoptions)
-            {			
-                if (strlen($shippingoptions['response']['error']['message']) > 0) {
-                    Log::add("Error shipping options: ".$shippingoptions['response']['error']['message'], "paazl");
-                    return false;
-                } elseif (count($shippingoptions['response']['shippingOptions']['shippingOption']) > 6) {
-                    return $shippingoptions['response']['shippingOptions']['shippingOption'];
-                } else {
-                    return array_shift($shippingoptions['response']['shippingOptions']['shippingOption']);
-                }
-            }
-            
-            public function hasMultipleOptions($shippingoptions)
-            {
-                $count = count($shippingoptions['response']['shippingOptions']['shippingOption']);
-                if ($count == 1 || $count > 6) {
-                    return false;
-                } else {
-                    return true;
-                }
-            }
+    public function firstOption($shippingoptions)
+    {
+        if (strlen($shippingoptions['response']['error']['message']) > 0) {
+            return false;
+        } elseif (count($shippingoptions['response']['shippingOptions']['shippingOption']) > 6) {
+            return $shippingoptions['response']['shippingOptions']['shippingOption'];
+        } else {
+            return array_shift($shippingoptions['response']['shippingOptions']['shippingOption']);
+        }
+    }
+    
+    public function hasMultipleOptions($shippingoptions)
+    {
+        $count = count($shippingoptions['response']['shippingOptions']['shippingOption']);
+        if ($count == 1 || $count > 6) {
+            return false;
+        } else {
+            return true;
+        }
+    }
             
     
     
@@ -305,30 +410,6 @@ class PaazlClient
         exit(base64_decode($response['response']['labels'])); 
     }
     
-    public function isNotCreated($status)
-    {
-        if ($status['response']['error']['code'] == 1002) {
-            return true;
-        } else {
-            return false;
-        }
-    }
-    
-    public function printStatus($status)
-    {
-        if (isset($status['response']['error'])) {
-            $s = $status['response']['error']['message']." (".$status['response']['error']['code'].")";
-        } else {
-            $s = $status['response']['orderStatus']['status'];
-        }
-
-        if ($this->status[$s]) {
-            return $this->status[$s];
-        } else {
-            return $s;	
-        }
-    }
-
 
     /**
     *  doCall
@@ -342,7 +423,11 @@ class PaazlClient
         }
         
         $req = '
-            <soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:web="'.$wsdl.'">
+            <soapenv:Envelope 
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+                xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+                xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" 
+                xmlns:web="'.$wsdl.'">
                 <soapenv:Header/>
                 <soapenv:Body>
                     '.$env.'
@@ -358,16 +443,14 @@ class PaazlClient
             "Content-length: ".strlen($req)
         );
         
-        
-        
         $soap = curl_init();
-        curl_setopt($soap, CURLOPT_URL, 		   $wsdl );
+        curl_setopt($soap, CURLOPT_URL, $wsdl);
         curl_setopt($soap, CURLOPT_CONNECTTIMEOUT, 10);
-        curl_setopt($soap, CURLOPT_TIMEOUT,        10000);
-        curl_setopt($soap, CURLOPT_RETURNTRANSFER, true );
-        curl_setopt($soap, CURLOPT_POST,           true );
-        curl_setopt($soap, CURLOPT_POSTFIELDS,     $req);
-        curl_setopt($soap, CURLOPT_HTTPHEADER,     $header);
+        curl_setopt($soap, CURLOPT_TIMEOUT, 10000);
+        curl_setopt($soap, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($soap, CURLOPT_POST, true);
+        curl_setopt($soap, CURLOPT_POSTFIELDS, $req);
+        curl_setopt($soap, CURLOPT_HTTPHEADER, $header);
         curl_setopt($soap, CURLOPT_RETURNTRANSFER, true);
         $res = curl_exec($soap);
         
@@ -387,6 +470,6 @@ class PaazlClient
             $arr = json_decode(json_encode((array) simplexml_load_string($xml)), 1);
             
             return array("status" => 1, "response" => $arr);
-        }	
-    }	
+        }
+    }
 }
