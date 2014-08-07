@@ -10,7 +10,7 @@
     ],
     "minimum-stability": "dev",
     "require": {
-
+		 "monolog/monolog": "*"
     }
     ,"autoload": {
          "psr-4": {

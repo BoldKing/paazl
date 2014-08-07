@@ -6,24 +6,25 @@ namespace Atabix\Paazl;
 class PaazlClient
 {
     
-	public $liveurl 	= "https://ost.paazl.com/parcelshipperservice/orderRequest.wsdl";
-	public $stagingurl 	= "http://staging.paazl.com/parcelshipperservice/orderRequest.wsdl";
-
-	// Variables filled at construction once
-	private $username;
-	private $password; 	
-	private $webshopid; 
-	private $integrationpassword;
-	private $distributor = "DPD";
+    public $liveurl     = "https://ost.paazl.com/parcelshipperservice/orderRequest.wsdl";
+    public $stagingurl  = "http://staging.paazl.com/parcelshipperservice/orderRequest.wsdl";
     
-	public static $status = array(
-		"LABELS_NOT_CREATED" => "label not yet created",
-		"LABELS_CREATED" => "label created, ready for shipment",
-		"SCANNED" =>  "label scanned in sorting centre of distributor",
-		"DELIVERED" =>  "delivered at address of receptor",
-		"DELIVEREDBB" => "delivered at neighboring address of receptor",
-		"PICKEDUP" => "picked up at drop off location, e.g. DHL Servicepoint"
-	);
+    // Variables filled at construction once
+    private $islive;
+    private $username;
+    private $password;
+    private $webshopid;
+    private $integrationpassword;
+    private $distributor = "DPD";
+    
+    public static $status = array(
+        "LABELS_NOT_CREATED" => "label not yet created",
+        "LABELS_CREATED" => "label created, ready for shipment",
+        "SCANNED" =>  "label scanned in sorting centre of distributor",
+        "DELIVERED" =>  "delivered at address of receptor",
+        "DELIVEREDBB" => "delivered at neighboring address of receptor",
+        "PICKEDUP" => "picked up at drop off location, e.g. DHL Servicepoint"
+    );
 
     /**
      * @param string $username username given by Paazl
@@ -31,14 +32,16 @@ class PaazlClient
      * @param string $webshopid webshopid given by Paazl
      * @param string $integrationpassword integrationpassword given by Paazl
      */
-	public function __construct($username, $password, $webshopid, $integrationpassword, $distributor) {
-		$this->username = $username
-		$this->password = $password;
-		$this->webshopid = $webshopid;
-		$this->integrationpassword = $integrationpassword);		
-		$this->distributor = $distributor);		
-	}
-
+    public function __construct($islive, $username, $password, $webshopid, $integrationpassword, $distributor)
+    {
+        $this->islive = $islive;
+        $this->username = $username;
+        $this->password = $password;
+        $this->webshopid = $webshopid;
+        $this->integrationpassword = $integrationpassword;
+        $this->distributor = $distributor;
+    }
+    
     public function generateHash($orderReference)
     {
         $hash = sha1($this->webshopid . $this->integrationpassword . $orderReference);
@@ -54,135 +57,144 @@ class PaazlClient
         ';
     }
     
-    public function getAddress($orderReference, $zipcode, $number, $addition=null)
+    public function addressRequest($orderReference, $zipcode, $number, $addition = null)
     {
         $env = '
             <addressRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
-                <hash>'.$this->generateHash($orderReference).'</hash> 
-                <orderReference>'.$orderReference.'</orderReference> 
-                <webshop>'.$this->webshopid.'</webshop>
-                <zipcode>'.e($zipcode).'</zipcode>
-                <housenumber>'.e($number).'</housenumber> 
-            </addressRequest>
+                '.$this->mandatoryTags($orderReference).'
+                <zipcode>'.$zipcode.'</zipcode>
+                <housenumber>'.$number.'</housenumber> 
+        ';
+        
+        if ($addition) {
+            $env .= '<addition>'.$addition.'</addition></addressRequest>';
+        } else {
+            $env .= '</addressRequest>';
+        }
+        
+        return $this->doCall($env);
+    }
+
+
+    
+    public function createOrder($orderReference, $products)
+    {
+        $productElements = array(
+            "quantity",
+            "packagesPerUnit",
+            "matrix",
+            "weight",
+            "width",
+            "length",
+            "height",
+            "volume",
+            "code",
+            "description",
+            "countryOfManufacture",
+            "unitPrice",
+            "unitPriceCurrency"
+        );
+
+        $env = '
+            <orderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+                '.$this->mandatoryTags($orderReference).'
+                <products>
+        ';
+
+        foreach ($products as $item) {
+            $env.= '<product>';
+            foreach ($item as $element => $value) {
+                if (in_array($element, $productElements)) {
+                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+                }
+            }
+            $env.= '</product>';
+        }
+
+        $env .= '
+                </products>
+            </orderRequest>
         ';
         
         return $this->doCall($env);
     }
-
-
-    
-    public function createOrder($order)
-    {
-        $orderReference = $order->c['id'];	
-    
-        Log::add("Order created #".$orderReference, "paazl");
-        
+            
+    public function getShippingOptions(
+        $orderReference,
+        $country = "NL",
+        $zipcode = null,
+        $shippingOption = null,
+        $targetWebshop = null
+    ) {
         $env = '
-        <orderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-        '.$this->mandatoryTags($orderReference).'
-        <products>';
-        
-        foreach ($order->orderitems->get() as $item) {
-        $env.= '	<product>
-        <unitPrice>'.$item->getTotalPrice().'</unitPrice>
-        <quantity>'.$item->c['count'].'</quantity> 
-        <weight>10</weight>
-        </product>';
-        }
-        $env.= '
-        
-        </products>
-        </orderRequest>';
-        
-        return $this->doCall($env);
-        }
-        
-        public function updateOrder($order) {
-        $orderReference = $order->c['id'];	
-        
-        Log::add("Order update #".$orderReference, "paazl");
-        
-        $env = '
-        <updateOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-        '.$this->mandatoryTags($orderReference).'
-        <products>';
-        
-        foreach ($order->orderitems->get() as $item) {
-        $env.= '	<product>
-        <unitPrice>'.$item->getTotalPrice().'</unitPrice>
-        <quantity>'.$item->c['count'].'</quantity> 
-        <weight>10</weight>
-        </product>
+            <shippingOptionRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+                '.$this->mandatoryTags($orderReference).'
+                <country>'.$country.'</country>
         ';
+
+        if ($zipcode) {
+            $env .= '<postcode>'.$zipcode.'</postcode>';
         }
-        $env.= '
-        <product>
-        <matrix>A</matrix>
-        </product>
-        </products>
-        </updateOrderRequest>';
-        
-        return $this->doCall($env);
-    }
-    
-    public function orderStatus($order)
-    {
-        $orderReference = $order->c['id'];	
-        $env = '
-        <orderStatusRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-        '.$this->mandatoryTags($orderReference).'
-        <includeLabels>true</includeLabels>
-        </orderStatusRequest>';
-        
-        return $this->doCall($env);
-    }
-    
-    public function isNotCreated($status)
-    {
-        if ($status['response']['error']['code'] == 1002) {
-            return true;
-        } else {
-            return false;
+        if ($shippingOption) {
+            $env .= '<shippingOption>'.$shippingOption.'</shippingOption>';
         }
-    }
-    
-    public function printStatus($status)
-    {
-        if (isset($status['response']['error'])) {
-            $s = $status['response']['error']['message']." (".$status['response']['error']['code'].")";
-        } else {
-            $s = $status['response']['orderStatus']['status'];
+        if ($shippingOption) {
+            $env .= '<shippingOption>'.$shippingOption.'</shippingOption>';
+        }
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
         }
 
-        if ($this->status[$s]) {
-            return $this->status[$s];
-        } else {
-            return $s;	
-        }
-    }
-    
-    public function shippingOption($order)
-    {
-        $orderReference = $order->c['id'];	
-        $env = '		
-        <shippingOptionRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-        '.$this->mandatoryTags($orderReference).'
-        <postcode>'.e($order->c['d_postalcode']).'</postcode>
-        <country>'.e($order->c['d_country']).'</country> 
-        <shippingOption>DPD</shippingOption>
-        </shippingOptionRequest>';
+        $env .= '</shippingOptionRequest>';
+        
         return $this->doCall($env);
     }
     
     
-    public function commitOrder($order, $shipping)
+    public function updateOrder($orderReference, $products)
     {
-        $orderReference = $order->c['id'];
-        $user = CosmicUser::loadOne($order->c['customer']);
-        $mail = ($user)?$user->c['email']:"";
+        $productElements = array(
+            "quantity",
+            "packagesPerUnit",
+            "matrix",
+            "weight",
+            "width",
+            "length",
+            "height",
+            "volume",
+            "code",
+            "description",
+            "countryOfManufacture",
+            "unitPrice",
+            "unitPriceCurrency"
+        );
+
+        $env = '
+            <updateOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+                '.$this->mandatoryTags($orderReference).'
+                <products>
+        ';
+
+        foreach ($products as $item) {
+            $env.= '<product>';
+            foreach ($item as $element => $value) {
+                if (in_array($element, $productElements)) {
+                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+                }
+            }
+            $env.= '</product>';
+        }
+
+        $env .= '
+                </products>
+            </updateOrderRequest>
+        ';
         
-        Log::add("Commit order #".$orderReference, "paazl");
-        
+        return $this->doCall($env);
+    }
+    
+    public function commitOrder($orderReference, $shipping)
+    {
         $env = '<commitOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
             '.$this->mandatoryTags($orderReference).' 
             <pendingOrderReference>'.$orderReference.'</pendingOrderReference> 
@@ -210,47 +222,61 @@ class PaazlClient
         
         return $this->doCall($env);
     }
-    
-    public function fastCommit($order)
-    {
-        Log::add("Fast commit order #".$order->c['id'], "paazl");
-        $paazlClient = new PaazlClient();
-        $insert = $paazlClient->createOrder($order);
+
+
+        public function orderStatus($order)
+        {
+            $orderReference = $order->c['id'];	
+            $env = '
+            <orderStatusRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            '.$this->mandatoryTags($orderReference).'
+            <includeLabels>true</includeLabels>
+            </orderStatusRequest>';
+            
+            return $this->doCall($env);
+        }
         
-        $shippingoptions = $paazlClient->shippingOption($order);
-        
-        if ($this->hasMultipleOptions($shippingoptions)) {
-            Log::add("Multiple shipping options, no auto selection", "paazl");
-            return;
-        }
-        $firstOption = $paazlClient->firstOption($shippingoptions);
-        Log::add("First shipping option selected for order #".$order->c['id']." (".serialize($firstOption).")", "paazl");
-        $commit = $paazlClient->commitOrder($order, $firstOption);
-        Log::add("Commit order #".$order->c['id'], "paazl");
-    }
     
-    public function firstOption($shippingoptions)
-    {			
-        if (strlen($shippingoptions['response']['error']['message']) > 0) {
-            Log::add("Error shipping options: ".$shippingoptions['response']['error']['message'], "paazl");
-            return false;
-        } elseif (count($shippingoptions['response']['shippingOptions']['shippingOption']) > 6) {
-            return $shippingoptions['response']['shippingOptions']['shippingOption'];
-        } else {
-            return array_shift($shippingoptions['response']['shippingOptions']['shippingOption']);
-        }
-    }
-    
-    public function hasMultipleOptions($shippingoptions)
-    {
-        $count = count($shippingoptions['response']['shippingOptions']['shippingOption']);
-        if ($count == 1 || $count > 6) {
-            return false;
-        } else {
-            return true;
-        }
-    }
-    
+            public function fastCommit($order)
+            {
+                Log::add("Fast commit order #".$order->c['id'], "paazl");
+                $paazlClient = new PaazlClient();
+                $insert = $paazlClient->createOrder($order);
+                
+                $shippingoptions = $paazlClient->shippingOption($order);
+                
+                if ($this->hasMultipleOptions($shippingoptions)) {
+                    Log::add("Multiple shipping options, no auto selection", "paazl");
+                    return;
+                }
+                $firstOption = $paazlClient->firstOption($shippingoptions);
+                Log::add("First shipping option selected for order #".$order->c['id']." (".serialize($firstOption).")", "paazl");
+                $commit = $paazlClient->commitOrder($order, $firstOption);
+                Log::add("Commit order #".$order->c['id'], "paazl");
+            }
+            
+            public function firstOption($shippingoptions)
+            {			
+                if (strlen($shippingoptions['response']['error']['message']) > 0) {
+                    Log::add("Error shipping options: ".$shippingoptions['response']['error']['message'], "paazl");
+                    return false;
+                } elseif (count($shippingoptions['response']['shippingOptions']['shippingOption']) > 6) {
+                    return $shippingoptions['response']['shippingOptions']['shippingOption'];
+                } else {
+                    return array_shift($shippingoptions['response']['shippingOptions']['shippingOption']);
+                }
+            }
+            
+            public function hasMultipleOptions($shippingoptions)
+            {
+                $count = count($shippingoptions['response']['shippingOptions']['shippingOption']);
+                if ($count == 1 || $count > 6) {
+                    return false;
+                } else {
+                    return true;
+                }
+            }
+            
     
     
     /**
@@ -279,10 +305,35 @@ class PaazlClient
         exit(base64_decode($response['response']['labels'])); 
     }
     
+    public function isNotCreated($status)
+    {
+        if ($status['response']['error']['code'] == 1002) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+    
+    public function printStatus($status)
+    {
+        if (isset($status['response']['error'])) {
+            $s = $status['response']['error']['message']." (".$status['response']['error']['code'].")";
+        } else {
+            $s = $status['response']['orderStatus']['status'];
+        }
+
+        if ($this->status[$s]) {
+            return $this->status[$s];
+        } else {
+            return $s;	
+        }
+    }
+
+
     /**
     *  doCall
     */
-    public function doCall($env)
+    private function doCall($env)
     {
         if ($this->islive) {
             $wsdl = $this->liveurl;
@@ -293,10 +344,10 @@ class PaazlClient
         $req = '
             <soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:web="'.$wsdl.'">
                 <soapenv:Header/>
-                    <soapenv:Body>
-                        '.$env.'
-                    </soapenv:Body>
-                    </soapenv:Envelope>
+                <soapenv:Body>
+                    '.$env.'
+                </soapenv:Body>
+            </soapenv:Envelope>
         ';
         
         $header = array(
