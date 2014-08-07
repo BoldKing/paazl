@@ -31,13 +31,7 @@ class PaazlClient
         $this->integrationpassword = $integrationpassword;
     }
     
-    public function generateHash($orderReference)
-    {
-        $hash = sha1($this->webshopid . $this->integrationpassword . $orderReference);
-        return $hash;
-    }
-    
-    public function mandatoryTags($orderReference)
+    private function mandatoryOrderRefTags($orderReference)
     {
         return '
             <hash>'.$this->generateHash($orderReference).'</hash>
@@ -46,27 +40,51 @@ class PaazlClient
         ';
     }
     
-    public function addressRequest($orderReference, $zipcode, $number, $addition = null)
+    private function insertOptionalElements(&$env, $possibleValues, $permittedElements)
+    {
+        foreach ($possibleValues as $element => $value) {
+            if (in_array($element, $permittedElements)) {
+                if (is_array($value)) {
+                    foreach ($value as $arrayValue) {
+                        $env .= '<'.$element.'>'.$arrayValue.'</'.$element.'>';
+                    }
+                } else {
+                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
+                }
+            }
+        }
+    }
+
+    public function generateHash($orderReference)
+    {
+        $hash = sha1($this->webshopid . $this->integrationpassword . $orderReference);
+        return $hash;
+    }
+
+    public function addressRequest($orderReference, $zipcode, $number, $addition = null, $targetWebshop = null)
     {
         $env = '
             <addressRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
-                '.$this->mandatoryTags($orderReference).'
+                '.$this->mandatoryOrderRefTags($orderReference).'
                 <zipcode>'.$zipcode.'</zipcode>
                 <housenumber>'.$number.'</housenumber> 
         ';
         
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+
         if ($addition) {
             $env .= '<addition>'.$addition.'</addition></addressRequest>';
         } else {
             $env .= '</addressRequest>';
         }
-        
         return $this->doCall($env);
     }
 
 
     
-    public function createOrder($orderReference, $products)
+    public function createOrder($orderReference, $products, $targetWebshop = null)
     {
         $productElements = array(
             "quantity",
@@ -85,18 +103,17 @@ class PaazlClient
         );
 
         $env = '
-            <orderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-                '.$this->mandatoryTags($orderReference).'
-                <products>
+            <updateOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+                '.$this->mandatoryOrderRefTags($orderReference).'
         ';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
 
+        $env .= '<products>';
         foreach ($products as $item) {
             $env.= '<product>';
-            foreach ($item as $element => $value) {
-                if (in_array($element, $productElements)) {
-                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-                }
-            }
+            $this->insertOptionalElements($env, $item, $productElements);
             $env.= '</product>';
         }
 
@@ -104,7 +121,6 @@ class PaazlClient
                 </products>
             </orderRequest>
         ';
-        
         return $this->doCall($env);
     }
             
@@ -117,7 +133,7 @@ class PaazlClient
     ) {
         $env = '
             <shippingOptionRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-                '.$this->mandatoryTags($orderReference).'
+                '.$this->mandatoryOrderRefTags($orderReference).'
                 <country>'.$country.'</country>
         ';
 
@@ -140,7 +156,7 @@ class PaazlClient
     }
     
     
-    public function updateOrder($orderReference, $products)
+    public function updateOrder($orderReference, $products, $targetWebshop = null)
     {
         $productElements = array(
             "quantity",
@@ -160,20 +176,19 @@ class PaazlClient
 
         $env = '
             <updateOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-                '.$this->mandatoryTags($orderReference).'
-                <products>
+                '.$this->mandatoryOrderRefTags($orderReference).'
         ';
-
-        foreach ($products as $item) {
-            $env.= '<product>';
-            foreach ($item as $element => $value) {
-                if (in_array($element, $productElements)) {
-                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-                }
-            }
-            $env.= '</product>';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
         }
 
+                
+        $env .= '<products>';
+        foreach ($products as $item) {
+            $env.= '<product>';
+            $this->insertOptionalElements($env, $item, $productElements);
+            $env.= '</product>';
+        }
         $env .= '
                 </products>
             </updateOrderRequest>
@@ -195,7 +210,7 @@ class PaazlClient
         $customerPhoneNumber = null,
         $targetWebshop = null
     ) {
-        // SET OPTIONAL ELEMNTS
+        // SET OPTIONAL ELEMENTS
         // shippingMethod
         $optElemShippingMethod = array(
             "distributor", // is not in documentation as an element but it is in the example....
@@ -236,17 +251,14 @@ class PaazlClient
             "country"
         );
 
-
-
         // BUILD XML FILE
-        $env = '
-            <commitOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-                <hash>'.$this->generateHash($pendingOrderReference).'</hash>
-                <webshop>'.$this->webshopid.'</webshop>
-                <orderReference>'.$orderReference.'</orderReference> 
-                <pendingOrderReference>'.$pendingOrderReference.'</pendingOrderReference> 
-                <totalAmount>'.$totalAmount.'</totalAmount> 
-                <totalAmountCurrency>'.$totalAmountCurrency.'</totalAmountCurrency> 
+        $env = '<commitOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            <hash>'.$this->generateHash($pendingOrderReference).'</hash>
+            <webshop>'.$this->webshopid.'</webshop>
+            <orderReference>'.$orderReference.'</orderReference> 
+            <pendingOrderReference>'.$pendingOrderReference.'</pendingOrderReference> 
+            <totalAmount>'.$totalAmount.'</totalAmount> 
+            <totalAmountCurrency>'.$totalAmountCurrency.'</totalAmountCurrency> 
         ';
         if ($customerEmail) {
             $env .= '<customerEmail>'.$customerEmail.'</customerEmail>';
@@ -254,59 +266,42 @@ class PaazlClient
         if ($customerPhoneNumber) {
             $env .= '<customerPhoneNumber>'.$customerPhoneNumber.'</customerPhoneNumber>';
         }
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
 
         // shippingMethod
-        $env .= '
-            <shippingMethod>
-                <type>'.$shippingMethod['type'].'</type> 
-                <identifier>'.$shippingMethod['identifier'].'</identifier> 
-                <option>'.$shippingMethod['option'].'</option>
-                <price>'.$shippingMethod['price'].'</price> 
+        $env .= '<shippingMethod>
+            <type>'.$shippingMethod['type'].'</type> 
+            <identifier>'.$shippingMethod['identifier'].'</identifier> 
+            <option>'.$shippingMethod['option'].'</option>
+            <price>'.$shippingMethod['price'].'</price> 
         ';
-        // insert optional elements
-        foreach ($shippingMethod as $element => $value) {
-            if (in_array($element, $optElemShippingMethod)) {
-                $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-            }
-        }
+        $this->insertOptionalElements($env, $shippingMethod, $optElemShippingMethod);
         $env .= '</shippingMethod>';
 
         // shippingAddress
-        $env .= '
-            <shippingAddress>
-                <customerName>'.$shippingAddress['customerName'].'</customerName> 
-                <street>'.$shippingAddress['street'].'</street> 
-                <housenumber>'.$shippingAddress['housenumber'].'</housenumber>
-                <zipcode>'.$shippingAddress['zipcode'].'</zipcode> 
-                <city>'.$shippingAddress['city'].'</city> 
+        $env .= '<shippingAddress>
+            <customerName>'.$shippingAddress['customerName'].'</customerName> 
+            <street>'.$shippingAddress['street'].'</street> 
+            <housenumber>'.$shippingAddress['housenumber'].'</housenumber>
+            <zipcode>'.$shippingAddress['zipcode'].'</zipcode> 
+            <city>'.$shippingAddress['city'].'</city> 
         ';
-        // insert optional elements
-        foreach ($shippingAddress as $element => $value) {
-            if (in_array($element, $optElemShippingAddress)) {
-                $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-            }
-        }
+        $this->insertOptionalElements($env, $shippingAddress, $optElemShippingAddress);
         $env .= '</shippingAddress>';
 
         // (Optional) shipperAddress
         if (is_array($shipperAddress)) {
             $env .= '<shipperAddress>';
-            foreach ($shipperAddress as $element => $value) {
-                if (in_array($element, $optShipperAndReturnAddress)) {
-                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-                }
-            }
+            $this->insertOptionalElements($env, $shipperAddress, $optShipperAndReturnAddress);
             $env .= '</shipperAddress>';
         }
 
         // (Optional) returnAddress
         if (is_array($returnAddress)) {
             $env .= '<returnAddress>';
-            foreach ($returnAddress as $element => $value) {
-                if (in_array($element, $optShipperAndReturnAddress)) {
-                    $env .= '<'.$element.'>'.$value.'</'.$element.'>';
-                }
-            }
+            $this->insertOptionalElements($env, $returnAddress, $optShipperAndReturnAddress);
             $env .= '</returnAddress>';
         }
 
@@ -314,15 +309,17 @@ class PaazlClient
         
         return $this->doCall($env);
     }
+    
 
-
-    public function orderStatus($orderReference, $includeLabels = null)
+    public function orderStatus($orderReference, $targetWebshop = null, $includeLabels = null)
     {
         $env = '
             <orderStatusRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-            '.$this->mandatoryTags($orderReference)
+            '.$this->mandatoryOrderRefTags($orderReference)
         ;
-        
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
         if ($includeLabels) {
             $env .= '<includeLabels>'.$includeLabels.'</includeLabels>';
         }
@@ -335,7 +332,7 @@ class PaazlClient
     {
         $env = '
             <orderDetailsRequest xmlns="http://www.paazl.com/schemas/matrix"> 
-            '.$this->mandatoryTags($orderReference)
+            '.$this->mandatoryOrderRefTags($orderReference)
         ;
         
         if ($targetWebshop) {
@@ -345,6 +342,237 @@ class PaazlClient
         
         return $this->doCall($env);
     }
+
+    public function changeOrder(
+        $orderReference,
+        $newOrderReference = null,
+        $targetWebshop = null,
+        $totalAmount = null,
+        $totalAmountCurrency = null,
+        $customerEmail = null,
+        $customerPhoneNumber = null,
+        $shippingAddress = null,
+        $shipperAddress = null,
+        $returnAddress = null,
+        $shippingMethod = null,
+        $products = null
+    ) {
+        // SET OPTIONAL ELEMENTS
+        $productElements = array(
+            "quantity",
+            "packagesPerUnit",
+            "matrix",
+            "weight",
+            "width",
+            "length",
+            "height",
+            "volume",
+            "code",
+            "description",
+            "countryOfManufacture",
+            "unitPrice",
+            "unitPriceCurrency"
+        );
+        // shippingMethod
+        $optElemShippingMethod = array(
+            "type",
+            "identifier",
+            "option",
+            "price",
+            "distributor", // is not in documentation as an element but it is in the example....
+            "servicepointNotificationEmail",
+            "servicepointNotificationMobile",
+            "customsValue",
+            "customsValueCurrency",
+            "assuredAmount",
+            "assuredAmountCurrency",
+            "collo",
+            "packageCount",
+            "maxLabels",
+            "packagingType",
+            "preferredDeliveryDate",
+            "description"
+        );
+        // shippinAddress
+        $optElemShippingAddress = array(
+            "customerName",
+            "street",
+            "housenumber",
+            "zipcode",
+            "city",
+            "accountNumber",
+            "companyName",
+            "nameOther",
+            "additionalAddressLine",
+            "addition",
+            "province",
+            "country",
+            "localAddressValidation",
+            "additionalInstruction"
+        );
+
+        // shipper and return Address Elements
+        $optShipperAndReturnAddress = array(
+            "addresseeLine",
+            "street",
+            "housenumber",
+            "addition",
+            "zipcode",
+            "city",
+            "country"
+        );
+
+        // BUILD XML FILE
+        $env = '<changeOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            '.$this->mandatoryOrderRefTags($orderReference)
+        ;
+
+        if ($newOrderReference) {
+            $env .= '<newOrderReference>'.$newOrderReference.'</newOrderReference>';
+        }
+        if ($totalAmount) {
+            $env .= '<totalAmount>'.$totalAmount.'</totalAmount>';
+        }
+        if ($totalAmountCurrency) {
+            $env .= '<totalAmountCurrency>'.$totalAmountCurrency.'</totalAmountCurrency>';
+        }
+        if ($customerEmail) {
+            $env .= '<customerEmail>'.$customerEmail.'</customerEmail>';
+        }
+        if ($customerPhoneNumber) {
+            $env .= '<customerPhoneNumber>'.$customerPhoneNumber.'</customerPhoneNumber>';
+        }
+
+        // shippingMethod
+        if (is_array($shippingMethod)) {
+            $env .= '<shippingMethod>';
+            $this->insertOptionalElements($env, $shippingMethod, $optElemShippingMethod);
+            $env .= '</shippingMethod>';
+        }
+        // shippingAddress
+        if (is_array($shippingAddress)) {
+            $env .= '<shippingAddress>';
+            $this->insertOptionalElements($env, $shippingAddress, $optElemShippingAddress);
+            $env .= '</shippingAddress>';
+        }
+
+        // (Optional) shipperAddress
+        if (is_array($shipperAddress)) {
+            $env .= '<shipperAddress>';
+            $this->insertOptionalElements($env, $shipperAddress, $optShipperAndReturnAddress);
+            $env .= '</shipperAddress>';
+        }
+
+        // (Optional) returnAddress
+        if (is_array($returnAddress)) {
+            $env .= '<returnAddress>';
+            $this->insertOptionalElements($env, $returnAddress, $optShipperAndReturnAddress);
+            $env .= '</returnAddress>';
+        }
+
+        //products
+        if (is_array($products)) {
+            $env .= '<products>';
+            foreach ($products as $item) {
+                $env.= '<product>';
+                $this->insertOptionalElements($env, $item, $productElements);
+                $env.= '</product>';
+            }
+            $env .= '</products>';
+        }
+
+        $env .= '</changeOrderRequest>';
+        
+        return $this->doCall($env);
+    }
+    
+    public function ordersToShip($date = null, $targetWebshop = null, $dateDefaultTimezone = null)
+    {
+        if ($dateDefaultTimezone) {
+            date_default_timezone_set($dateDefaultTimezone);
+        }
+
+        if (!$date) {
+            $refDate = date("Ymd");
+        } else {
+            $refDate = date("Ymd", strtotime($date));
+        }
+        $env = '
+            <ordersToShipRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            <hash>'.$this->generateHash($refDate).'</hash>
+            <webshop>'.$this->webshopid.'</webshop>
+        ';
+
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        if ($date) {
+            $env .= '<deliveryDate>'.date("Y-m-d+H:i", strtotime($date)).'</deliveryDate>';
+        }
+        $env .= '</ordersToShipRequest>';
+        return $this->doCall($env);
+    }
+
+    public function rateRequest(
+        $orderReference,
+        $targetWebshop = null,
+        $postalCode = null,
+        $country = null,
+        $shippingOption = null
+    ) {
+        $env = '
+            <rateRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
+                '.$this->mandatoryOrderRefTags($orderReference).'
+        ';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        if ($country) {
+            $env .= '<country>'.$country.'</country>';
+        }
+        if ($postalCode) {
+            $env .= '<postalCode>'.$postalCode.'</postalCode>';
+        }
+        if ($shippingOption) {
+            $env .= '<shippingOption>'.$shippingOption.'</shippingOption>';
+        }
+
+        $env .= '</rateRequest>';
+        return $this->doCall($env);
+    }
+
+
+    public function listOrders(
+        $changedSince,
+        $dateDefaultTimezone = null,
+        $page = null,
+        $targetWebshop = null,
+        $country = null
+    ) {
+        if ($dateDefaultTimezone) {
+            date_default_timezone_set($dateDefaultTimezone);
+        }
+
+        $env = '
+            <listOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            <hash>'.$this->generateHash(date("YmdHis")).'</hash>
+            <webshop>'.$this->webshopid.'</webshop>
+            <changedSince>'.date("Ymd", strtotime($changedSince)).'</changedSince>
+        ';
+        if ($targetWebshop) {
+            $env .= '<targetWebshop>'.$targetWebshop.'</targetWebshop>';
+        }
+        if ($country) {
+            $env .= '<country>'.$country.'</country>';
+        }
+        if ($page) {
+            $env .= '<page>'.$page.'</page>';
+        }
+        $env .= '</listOrderRequest>';
+        return $this->doCall($env);
+    }
+
+
         
     // OUD
     public function fastCommit($order)

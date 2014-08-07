@@ -34,6 +34,6 @@ $items[] =array(
     "unitPrice"=>"534.80",
     "unitPriceCurrency"=>"EUR"
 );
-*/
+
 $orderID = sha1(uniqid()); // random test id
-$paazl->createOrder($orderID);
+$paazl->createOrder($orderID, $items);

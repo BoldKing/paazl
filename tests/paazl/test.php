@@ -2,34 +2,11 @@
 $baseDir = __DIR__."/../..";
 require_once $baseDir.'/vendor/autoload.php';
 
-$paazl = new Atabix\Paazl\PaazlClient(false, "usernam", "1dsasasr", "31234", "sdniasdh");
+$paazl = new Atabix\Paazl\PaazlClient(false, "atabix", "solutions1055", "372", "gvv14907");
 
-/*
-MANY MORE OPTIONS, but this is the least format
-*/
-
-$shippingAddress =array(
-    "customerName"=>"Daan Hage",
-    "street"=>"ADmiraal de RUijterweg",
-    "housenumber"=>"244",
-    "zipcode"=>"1055MN",
-    "city"=>"Amsterdam",
-);
-
-$shippingMethod =array(
-    "type"=>"delivery",
-    "identifier"=>"0",
-    "option"=>"D",
-    "price"=>"0.5",
-);
-$orderID = 23;
-$random = sha1(uniqid());
-
-//var_dump($paazl->getShippingOptions($orderID));
-
- var_dump($paazl->orderDetails($orderID, 'dsadsadsasdaadsdas'));
-
-
+$timezone = 'Europe/Amsterdam';
+date_default_timezone_set($timezone);
+var_dump($paazl->listOrders(date("2013-m-d H:i:s"), $timezone));
 
 
 
