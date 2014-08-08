@@ -683,8 +683,12 @@ class PaazlClient
         return $this->doCall($env);
     }
 
-    public function generateExtraPdfReturnLabel($orderReference, $printer = null, $targetWebshop = null, $shippingOption = null) // BETA, not confirmed that it works
-    {
+    public function generateExtraPdfReturnLabel(
+        $orderReference,
+        $printer = null,
+        $targetWebshop = null,
+        $shippingOption = null
+    ) { // BETA, not confirmed that it works
         $env = '
             <generateExtraPdfReturnLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
                 '.$this->mandatoryOrderRefTags($orderReference).'
@@ -725,8 +729,11 @@ class PaazlClient
         return $this->doCall($env);
     }
     
-    public function generateExtraImageReturnLabel($orderReference, $targetWebshop = null, $shippingOption = null) // BETA, not confirmed that it works
-    {
+    public function generateExtraImageReturnLabel(
+        $orderReference,
+        $targetWebshop = null,
+        $shippingOption = null
+    ) { // BETA, not confirmed that it works
         $env = '
             <generateExtraImageReturnLabelRequest xmlns="http://www.paazl.com/schemas/matrix"> 	
                 '.$this->mandatoryOrderRefTags($orderReference).'
