@@ -105,7 +105,7 @@ class PaazlClient
         );
 
         $env = '
-            <updateOrderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
+            <orderRequest xmlns="http://www.paazl.com/schemas/matrix"> 
                 '.$this->mandatoryOrderRefTags($orderReference).'
         ';
         if ($targetWebshop) {
@@ -123,6 +123,7 @@ class PaazlClient
                 </products>
             </orderRequest>
         ';
+
         return $this->doCall($env);
     }
             
@@ -783,7 +784,7 @@ class PaazlClient
             "Pragma: no-cache",
             "Content-length: ".strlen($req)
         );
-        
+
         $soap = curl_init();
         curl_setopt($soap, CURLOPT_URL, $wsdl);
         curl_setopt($soap, CURLOPT_CONNECTTIMEOUT, 10);
@@ -794,22 +795,23 @@ class PaazlClient
         curl_setopt($soap, CURLOPT_HTTPHEADER, $header);
         curl_setopt($soap, CURLOPT_RETURNTRANSFER, true);
         $res = curl_exec($soap);
-        
+
         if ($res === false) { // If something went wrong print error
             $err = 'Curl error: ' . curl_error($soap);
             curl_close($soap);
             return array("status" => 0, "msg" => $err);
         } else {
             curl_close($soap);
-            
+
             // Remove Soap tags
             $s = "<SOAP-ENV:Body>";
             $e = "</SOAP-ENV:Body>";
-            $xml = substr($res, strpos($res, $s)+strlen($s), strpos($res, $e)-(strpos($res, $s)+strlen($s)));
             
+            $xml = substr($res, strpos($res, $s)+strlen($s), strpos($res, $e)-(strpos($res, $s)+strlen($s)));
+
             // Convert XML string to array
             $arr = json_decode(json_encode((array) simplexml_load_string($xml)), 1);
-            
+
             return array("status" => 1, "response" => $arr);
         }
     }
