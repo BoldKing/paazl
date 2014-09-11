@@ -591,7 +591,7 @@ class PaazlClient
                         <orderReference>'.$order['orderReference'].'</orderReference>
                         <hash>'.$this->generateHash($order['orderReference']).'</hash> 
             ';
-            if ($order['targetWebshop']) {
+            if (isset($order['targetWebshop'])) {
                 $env .= '<targetWebshop>'.$order['targetWebshop'].'</targetWebshop>';
             }
             $env .= '</order>';
